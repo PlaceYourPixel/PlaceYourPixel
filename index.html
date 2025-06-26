@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <title>Mini r/place</title>
+  <style>
+    body { background: #222; color: #eee; font-family: sans-serif; }
+    #canvas { image-rendering: pixelated; border: 2px solid #444; }
+    #color { width: 40px; }
+  </style>
+</head>
+<body>
+  <h1>Mini r/place</h1>
+  <input type="color" id="color" value="#ff0000"/>
+  <span id="cooldown"></span>
+  <br>
+  <canvas id="canvas" width="960" height="540"></canvas>
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const WIDTH = 960, HEIGHT = 540;
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    const colorInput = document.getElementById("color");
+    const cooldownSpan = document.getElementById("cooldown");
+    let cooldown = 0;
+
+    const socket = io();
+
+    // Pixeldaten initialisieren
+    let imageData = ctx.createImageData(WIDTH, HEIGHT);
+
+    function hexToRgb(hex) {
+      const n = parseInt(hex.slice(1), 16);
+      return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+    }
+
+    function drawPixel(x, y, color) {
+      const [r, g, b] = hexToRgb(color);
+      const idx = (y * WIDTH + x) * 4;
+      imageData.data[idx] = r;
+      imageData.data[idx + 1] = g;
+      imageData.data[idx + 2] = b;
+      imageData.data[idx + 3] = 255;
+    }
+
+    socket.on("init", (canvasData) => {
+      for (let y = 0; y < HEIGHT; y++) {
+        for (let x = 0; x < WIDTH; x++) {
+          drawPixel(x, y, canvasData[y][x]);
+        }
+      }
+      ctx.putImageData(imageData, 0, 0);
+    });
+
+    socket.on("pixel_update", ({ x, y, color }) => {
+      drawPixel(x, y, color);
+      ctx.putImageData(imageData, 0, 0);
+    });
+
+    socket.on("cooldown", (seconds) => {
+      cooldown = seconds;
+      cooldownSpan.textContent = `Cooldown: ${cooldown}s`;
+    });
+
+    // Cooldown runterzählen
+    setInterval(() => {
+      if (cooldown > 0) {
+        cooldown--;
+        cooldownSpan.textContent = `Cooldown: ${cooldown}s`;
+      } else {
+        cooldownSpan.textContent = "";
+      }
+    }, 1000);
+
+    canvas.addEventListener("click", (e) => {
+      if (cooldown > 0) return;
+      const rect = canvas.getBoundingClientRect();
+      const x = Math.floor((e.clientX - rect.left) * (WIDTH / rect.width));
+      const y = Math.floor((e.clientY - rect.top) * (HEIGHT / rect.height));
+      socket.emit("place_pixel", { x, y, color: colorInput.value });
+    });
+  </script>
+</body>
+</html>
